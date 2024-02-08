@@ -17,21 +17,12 @@ public class Graph : MonoBehaviour {
     void Awake() {
         float step = 2f / resolution; // -1 to 1 width's divisions
 
-        Vector3 position = Vector3.zero;
         Vector3 scale = Vector3.one * step;
 
         points = new Transform[resolution * resolution];
-        for(int i=0, x = 0, z=0; i < points.Length; i++, x++) {
-            if(x == resolution) {
-                x = 0;
-                z += 1;
-            }
+        for(int i=0; i < points.Length; i++) {
             Transform point = points[i] = Instantiate(pointPrefab);
 
-            position.x =  (x + 0.5f) * step - 1f; // move cube to center, scale down by resolution, offset x-axis by 1 to left
-            position.z =  (z + 0.5f) * step - 1f;
-
-            point.localPosition = position;
             point.localScale = scale;
 
             point.SetParent(transform, false);
@@ -40,17 +31,17 @@ public class Graph : MonoBehaviour {
 
     void Update() {
         float step = 2f / resolution; // -1 to 1 width's divisions
+		float v = 0.5f * step - 1f;
 
-
-        for(int i=0; i < points.Length; i++) {
-            Transform point = points[i];
-            Vector3 position = point.localPosition;
-
-		    FunctionLibrary.Function f = FunctionLibrary.GetFunction(function);
-
-            position.y = f(position.x, position.z, Time.time);
-            point.localPosition = position;
-
-        }
+        FunctionLibrary.Function f = FunctionLibrary.GetFunction(function);
+		for (int i = 0, x = 0, z = 0; i < points.Length; i++, x++) {
+			if (x == resolution) {
+				x = 0;
+				z += 1;
+                v = (z + 0.5f) * step - 1f;
+			}
+			float u = (x + 0.5f) * step - 1f;
+			points[i].localPosition = f(u, v, Time.time);
+		}
     }
 }
