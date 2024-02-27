@@ -3,7 +3,9 @@ using UnityEngine;
 
 public class GPUGraph : MonoBehaviour {
 
-    [SerializeField, Range(10,300)]
+	const int maxResolution = 1000;
+
+    [SerializeField, Range(10, maxResolution)]
     int resolution = 10;
 
     [SerializeField]
@@ -32,15 +34,22 @@ public class GPUGraph : MonoBehaviour {
 
 	ComputeBuffer positionsBuffer;
 
+
 	static readonly int positionsId = Shader.PropertyToID("_Positions"),
 		resolutionId = Shader.PropertyToID("_Resolution"),
 		stepId = Shader.PropertyToID("_Step"),
-		timeId = Shader.PropertyToID("_Time");
+		timeId = Shader.PropertyToID("_Time"),
+		transitionProgressId = Shader.PropertyToID("_TransitionProgress");
 
 
 	void OnEnable () {
 		// gets invoked when the component is disabled, which also happens if the graph is destroyed and right before a hot reload
-		positionsBuffer = new ComputeBuffer(resolution * resolution, 3 * 4); // 3 floats * 4 bytes
+		positionsBuffer = new ComputeBuffer(maxResolution * maxResolution, 3 * 4); // 3 floats * 4 bytes
+
+		/*
+			Next, always use the square of the max resolution for the amount of elements of the buffer. 
+			This means that we'll always claim 12MB—roughly 11.44MiB—of GPU memory, no matter the graph resolution.
+		*/
 	}
 
 	void OnDisable () {
@@ -70,7 +79,8 @@ public class GPUGraph : MonoBehaviour {
 			and buffers can be linked to specific ones. We could get the kernel index by invoking FindKernel on the compute shader, 
 			but our single kernel always has index zero so we can use that value directly.
 		*/
-		computeShader.SetBuffer(0, positionsId, positionsBuffer);
+		var kernelIndex = (int)function + (int)(transitioning ? transitionFunction : function) * FunctionLibrary.FunctionCount;
+		computeShader.SetBuffer(kernelIndex, positionsId, positionsBuffer);
 		/*
 			After setting the buffer we can run our kernel, by invoking Dispatch on the compute shader with four integer parameters.
 			The first is the kernel index and the other three are the amount of groups to run, again split per dimension. 
@@ -80,7 +90,7 @@ public class GPUGraph : MonoBehaviour {
 			We can do this by performing a float division and passing the result to Mathf.CeilToInt.
 		*/
 		int groups = Mathf.CeilToInt(resolution / 8f);
-		computeShader.Dispatch(0, groups, groups, 1);
+		computeShader.Dispatch(kernelIndex, groups, groups, 1); //  index of kernel function in FunctionLibrary compute shader
 
 		material.SetBuffer(positionsId, positionsBuffer);
 		material.SetFloat(stepId, step);
@@ -97,9 +107,8 @@ public class GPUGraph : MonoBehaviour {
 			The final argument that we must provide to DrawMeshInstancedProcedural is how many instances should be drawn. 
 			This should match the amount of elements in the positions buffer, which we can retrieve via its count property.
 		*/
-		
 		var bounds = new Bounds(Vector3.zero, Vector3.one * (2f + 2f / resolution));
-		Graphics.DrawMeshInstancedProcedural(mesh, 0, material, bounds, positionsBuffer.count);
+		Graphics.DrawMeshInstancedProcedural(mesh, 0, material, bounds, resolution * resolution);
 
 		/*
 			Shouldn't we use DrawMeshInstancedIndirect?

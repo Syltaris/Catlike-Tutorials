@@ -11,14 +11,15 @@ public static class FunctionLibrary {
 
 	readonly static Function[] functions = { Wave, MultiWave, Ripple, Sphere, Torus };
 
-
-	public static Function GetFunction (FunctionName name) {
-		return functions[(int)name];
+	// getter style, property
+	public static int FunctionCount {
+		get => functions.Length;
 	}
 
-	public static FunctionName GetNextFunctionName (FunctionName name) {
-		return (int)name < functions.Length - 1 ? name + 1 : 0;
-	}
+	public static Function GetFunction (FunctionName name) => functions[(int)name];
+
+	public static FunctionName GetNextFunctionName (FunctionName name) =>
+		(int)name < functions.Length - 1 ? name + 1 : 0;
 
 	public static FunctionName GetRandomFunctionNameOtherThan (FunctionName name) {
 		var choice = (FunctionName)Random.Range(1, functions.Length);
