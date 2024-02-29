@@ -340,7 +340,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &166985385
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -353,12 +353,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: adc37285e47729d42af5afb032b2a802, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  resolution: 10
-  function: 0
+  resolution: 196
+  function: 4
   functionDuration: 1
   transitionDuration: 1
   transitionMode: 0
-  material: {fileID: 2100000, guid: b1ad8b2045bd4764dbdded3f68b2a1e4, type: 2}
+  material: {fileID: 2100000, guid: 3a888bfe8300fea468794af229162cf2, type: 2}
   mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   computeShader: {fileID: 7200000, guid: 438a4345c7b77df44bffead48ddd8b00, type: 3}
 --- !u!4 &166985386
