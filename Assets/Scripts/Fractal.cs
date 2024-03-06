@@ -4,19 +4,19 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Random = UnityEngine.Random;
 
 using static Unity.Mathematics.math;
-using float4x4 = Unity.Mathematics.float4x4;
 using quaternion = Unity.Mathematics.quaternion;
 
 
 public class Fractal : MonoBehaviour {
 
-	[SerializeField, Range(1, 8)]
+	[SerializeField, Range(3, 8)]
 	int depth = 4;
 
     [SerializeField]
-	Mesh mesh;
+	Mesh mesh, leafMesh;
 
 	[SerializeField]
 	Material material;
@@ -28,17 +28,13 @@ public class Fractal : MonoBehaviour {
     As we'll only need this type inside Fractal define it inside that class, along with its fields. Don't make it public, for the same reason.
     */
     struct FractalPart {
-		public float3 direction, worldPosition;
+		public float3  worldPosition;
 		public quaternion rotation, worldRotation;
-		public float spinAngle;
+		public float maxSagAngle, spinAngle, spinVelocity;
 	}
 
 	NativeArray<FractalPart>[] parts;
-	NativeArray<float4x4>[] matrices;
-
-	static float3[] directions = {
-		up(), right(), left(), forward(), back()
-	};
+	NativeArray<float3x4>[] matrices;
 
 	static quaternion[] rotations = {
 		quaternion.identity,
@@ -47,24 +43,46 @@ public class Fractal : MonoBehaviour {
 	};
 
 	FractalPart CreatePart (int childIndex) => new FractalPart {
-		direction = directions[childIndex],
-		rotation = rotations[childIndex]
+		maxSagAngle = radians(Random.Range(maxSagAngleA, maxSagAngleB)),
+		rotation = rotations[childIndex],
+		spinVelocity =
+			(Random.value < reverseSpinChance ? -1f : 1f) *
+			radians(Random.Range(spinSpeedA, spinSpeedB))	
 	};
+	static MaterialPropertyBlock propertyBlock;
 
 	ComputeBuffer[] matricesBuffers;
 
-	static readonly int matricesId = Shader.PropertyToID("_Matrices");
+	static readonly int 
+		matricesId = Shader.PropertyToID("_Matrices"),
+		colorAId = Shader.PropertyToID("_ColorA"),
+		colorBId = Shader.PropertyToID("_ColorB"),
+		baseColorId = Shader.PropertyToID("_BaseColor"),
+		sequenceNumbersId = Shader.PropertyToID("_SequenceNumbers");
 
-	static MaterialPropertyBlock propertyBlock;
 
+	[SerializeField]
+	Gradient gradientA, gradientB;
 
+	[SerializeField]
+	Color leafColorA, leafColorB;
+
+	
+	[SerializeField, Range(0f, 90f)]
+	float maxSagAngleA = 15f, maxSagAngleB = 25f;
+
+	[SerializeField, Range(0f, 90f)]
+	float spinSpeedA = 20f, spinSpeedB = 25f;
+
+	[SerializeField, Range(0f, 1f)]
+	float reverseSpinChance = 0.25f;
 	/*
 	The convention is to prefix all interface types with an I which stands for interface, so the interface is named JobFor with an I prefix. 
 	It's a job interface, specifically one that is used for functionality that runs inside for loops.
 	*/
-	[BurstCompile(CompileSynchronously = true)]
+	[BurstCompile(FloatPrecision.Standard, FloatMode.Fast, CompileSynchronously = true)]
 	struct UpdateFractalLevelJob : IJobFor {
-		public float spinAngleDelta;
+		public float deltaTime;
 		public float scale;
 
 		[ReadOnly]
@@ -72,37 +90,55 @@ public class Fractal : MonoBehaviour {
 		public NativeArray<FractalPart> parts;
 
 		[WriteOnly]
-		public NativeArray<float4x4> matrices;
+		public NativeArray<float3x4> matrices;
 
 		public void Execute (int i) {
 			FractalPart parent = parents[i / 5];
 			FractalPart part = parts[i];
-			part.spinAngle += spinAngleDelta;
-			part.worldRotation = mul(parent.worldRotation,
+			part.spinAngle += part.spinVelocity * deltaTime;
+
+			float3 upAxis = mul(mul(parent.worldRotation, part.rotation), up()); // parent * child then mask for up() vector
+			float3 sagAxis = cross(up(), upAxis);
+			float sagMagnitude = length(sagAxis);
+			quaternion baseRotation;
+			if (sagMagnitude > 0f) {
+				sagAxis /= sagMagnitude;
+				quaternion sagRotation =
+					quaternion.AxisAngle(sagAxis, part.maxSagAngle * sagMagnitude);
+				baseRotation = mul(sagRotation, parent.worldRotation);
+			}
+			else {
+				baseRotation = parent.worldRotation;
+			}
+			part.worldRotation = mul(baseRotation,
 				mul(part.rotation, quaternion.RotateY(part.spinAngle))
 			);
+
 			part.worldPosition =
 				parent.worldPosition +
-				mul(parent.worldRotation, 1.5f * scale * part.direction);
+				mul(part.worldRotation, float3(0f, 1.5f * scale, 0f));
 			parts[i] = part;
 
-			matrices[i] = float4x4.TRS(
-				part.worldPosition, part.worldRotation, float3(scale)
-			);
+			float3x3 r = float3x3(part.worldRotation) * scale;
+			matrices[i] = float3x4(r.c0, r.c1, r.c2, part.worldPosition);
 		}
 	}
 
+	Vector4[] sequenceNumbers;
+
     void OnEnable () {
 		parts = new NativeArray<FractalPart>[depth];
-		matrices = new NativeArray<float4x4>[depth];
+		matrices = new NativeArray<float3x4>[depth];
 		matricesBuffers = new ComputeBuffer[depth];
 		//parts.SetValue( new FractalPart[1], 0);
 
-		int stride = 16 * 4; //  A 4×4 matrix has sixteen float values, so the stride of the buffers is sixteen times four bytes
+		int stride = 12 * 4; // strip non-variant row
+		sequenceNumbers = new Vector4[depth];
         for (int i = 0, length = 1; i < parts.Length; i++, length *= 5) { // go through roots depths
 			parts[i] = new NativeArray<FractalPart>(length, Allocator.Persistent);
-			matrices[i] = new NativeArray<float4x4>(length, Allocator.Persistent);
+			matrices[i] = new NativeArray<float3x4>(length, Allocator.Persistent);
 			matricesBuffers[i] = new ComputeBuffer(length, stride);
+			sequenceNumbers[i] = new Vector4(Random.value, Random.value, Random.value, Random.value);
 		}
 
 		parts[0][0] = CreatePart(0);
@@ -128,6 +164,7 @@ public class Fractal : MonoBehaviour {
 		parts = null;
 		matrices = null;
 		matricesBuffers = null;
+		sequenceNumbers = null;
 	}
 
 	/*
@@ -169,33 +206,55 @@ public class Fractal : MonoBehaviour {
 		*/
 		parts[0][0] = rootPart;
 		float objectScale = transform.lossyScale.x;
-		matrices[0][0] = float4x4.TRS(
-			rootPart.worldPosition, rootPart.worldRotation, float3(objectScale)
-		);
+		float3x3 r = float3x3(rootPart.worldRotation) * objectScale;
+		matrices[0][0] = float3x4(r.c0, r.c1, r.c2, rootPart.worldPosition);
 
 		float scale = objectScale;
+		float deltaTime = Time.deltaTime;
+		rootPart.spinAngle += rootPart.spinVelocity * deltaTime;
 
 		JobHandle jobHandle = default;
 		for (int li = 1; li < parts.Length; li++) {
 			scale *= 0.5f;
 
-			jobHandle = new UpdateFractalLevelJob {
-				spinAngleDelta = spinAngleDelta,
+			jobHandle = new UpdateFractalLevelJob {				
+				deltaTime = deltaTime,
 				scale = scale,
 				parents = parts[li - 1],
 				parts = parts[li],
 				matrices = matrices[li]
-			}.Schedule(parts[li].Length, jobHandle); // only the last jobHandle needs to be passed down and 'await'ed
+			}.ScheduleParallel(parts[li].Length, 5, jobHandle);
+			 // only the last jobHandle needs to be passed down and 'await'ed
 
 		}
 		jobHandle.Complete();
 
+		int leafIndex = matricesBuffers.Length - 1;
 		var bounds = new Bounds(rootPart.worldPosition, 3f * objectScale * Vector3.one);
 		for (int i = 0; i < matricesBuffers.Length; i++) {
 			ComputeBuffer buffer = matricesBuffers[i];
 			buffer.SetData(matrices[i]);
 			propertyBlock.SetBuffer(matricesId, buffer);
-			Graphics.DrawMeshInstancedProcedural(mesh, 0, material, bounds, buffer.count, propertyBlock);
+			propertyBlock.SetVector(sequenceNumbersId, sequenceNumbers[i]);
+
+			Color colorA, colorB;
+			Mesh instanceMesh;
+
+			if (i == leafIndex) {
+				colorA = leafColorA;
+				colorB = leafColorB;
+				instanceMesh = leafMesh;
+			}
+			else {
+				float gradientInterpolator = i / (matricesBuffers.Length - 2f);
+				colorA = gradientA.Evaluate(gradientInterpolator);
+				colorB = gradientB.Evaluate(gradientInterpolator);
+				instanceMesh = mesh;
+			}
+			propertyBlock.SetColor(colorAId, colorA);
+			propertyBlock.SetColor(colorBId, colorB);
+
+			Graphics.DrawMeshInstancedProcedural(instanceMesh, 0, material, bounds, buffer.count, propertyBlock);
 		}
 	}
 }
