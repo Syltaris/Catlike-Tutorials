@@ -1,86 +1,117 @@
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Mathematics;
 using UnityEngine;
 
 using static Unity.Mathematics.math;
 
-public class HashVisualization : MonoBehaviour {
+public class HashVisualization : MonoBehaviour
+{
+    static int hashesId = Shader.PropertyToID("_Hashes"),
+        configId = Shader.PropertyToID("_Config");
 
-    static int
-		hashesId = Shader.PropertyToID("_Hashes"),
-		configId = Shader.PropertyToID("_Config");
+    [SerializeField]
+    Mesh instanceMesh;
 
-	[SerializeField]
-	Mesh instanceMesh;
+    [SerializeField]
+    Material material;
 
-	[SerializeField]
-	Material material;
+    [SerializeField, Range(1, 512)]
+    int resolution = 16;
 
-	[SerializeField, Range(1, 512)]
-	int resolution = 16;
+    [SerializeField]
+    int seed;
 
-	NativeArray<uint> hashes;
+    [SerializeField, Range(-2f, 2f)]
+    float verticalOffset = 1f;
 
-	ComputeBuffer hashesBuffer;
+    NativeArray<uint> hashes;
 
-	MaterialPropertyBlock propertyBlock;
+    ComputeBuffer hashesBuffer;
 
-	[BurstCompile(FloatPrecision.Standard, FloatMode.Fast, CompileSynchronously = true)]
-	struct HashJob : IJobFor {
+    MaterialPropertyBlock propertyBlock;
 
-	    public int resolution;
+    [BurstCompile(FloatPrecision.Standard, FloatMode.Fast, CompileSynchronously = true)]
+    struct HashJob : IJobFor
+    {
+        [WriteOnly]
+        public NativeArray<uint> hashes; // memory shared by jobs?
 
-		public float invResolution;
-        
+        public int resolution;
+        public float invResolution;
 
-		[WriteOnly]
-		public NativeArray<uint> hashes; // memory shared by jobs?
-        
-		public void Execute(int i) {
-			float v = floor(invResolution * i + 0.00001f);
-			float u = i - resolution * v;
-			hashes[i] = (uint)(frac(u * v * 0.381f) * 255f);		
+        public SmallXXHash hash;
+
+        public void Execute(int i)
+        {
+            int v = (int)floor(invResolution * i + 0.00001f); // int divs cannot be vectorized so aren't used here
+            int u = i - resolution * v - resolution / 2;
+            // To demonstrate that our hash function also works for negative coordinates, subtract half the resolution from U and V in HashJob.Execute.
+            v -= resolution / 2;
+
+            u *= 2;
+            v *= 2;
+
+            hashes[i] = hash.Eat(u).Eat(v); // (uint)(frac(u * v * 0.381f) * 255f); // i * 0.381f | weyl sequence
         }
-	}
+    }
 
-    void OnEnable () {
-		int length = resolution * resolution; // square grid
-		hashes = new NativeArray<uint>(length, Allocator.Persistent);
-		hashesBuffer = new ComputeBuffer(length, 4);
+    /*
+        We need to both multiply with and divide by the resolution in the shader,
+        so store the resolution and its reciprocal in the first two components of a configuration vector.
+    */
+    void OnEnable()
+    {
+        int length = resolution * resolution; // square grid
+        hashes = new NativeArray<uint>(length, Allocator.Persistent);
+        hashesBuffer = new ComputeBuffer(length, 4);
 
         // iterator parallelism
-		new HashJob {
-			hashes = hashes, // passes in shared buffer here
-			resolution = resolution,
-			invResolution = 1f / resolution
-		}.ScheduleParallel(hashes.Length, resolution, default).Complete();
+        new HashJob
+        {
+            hashes = hashes, // passes in shared buffer here
+            resolution = resolution,
+            invResolution = 1f / resolution,
+            hash = SmallXXHash.Seed(seed)
+        }
+            .ScheduleParallel(hashes.Length, resolution, default)
+            .Complete();
 
-		hashesBuffer.SetData(hashes);
+        hashesBuffer.SetData(hashes);
 
-		propertyBlock ??= new MaterialPropertyBlock();
-		propertyBlock.SetBuffer(hashesId, hashesBuffer);
-		propertyBlock.SetVector(configId, new Vector4(resolution, 1f / resolution));
-	}
+        propertyBlock ??= new MaterialPropertyBlock(); // ??= init with RHS if null
+        propertyBlock.SetBuffer(hashesId, hashesBuffer);
+        propertyBlock.SetVector(
+            configId,
+            new Vector4(resolution, 1f / resolution, verticalOffset / resolution)
+        );
+    }
 
-    void OnDisable () {
-		hashes.Dispose();
-		hashesBuffer.Release();
-		hashesBuffer = null;
-	}
+    void OnDisable()
+    {
+        hashes.Dispose();
+        hashesBuffer.Release();
+        hashesBuffer = null; // for OnValidate logic
+    }
 
-	void OnValidate () {
-		if (hashesBuffer != null && enabled) {
-			OnDisable();
-			OnEnable();
-		}
-	}
+    void OnValidate()
+    {
+        if (hashesBuffer != null && enabled)
+        {
+            OnDisable();
+            OnEnable();
+        }
+    }
 
-    void Update () {
-		Graphics.DrawMeshInstancedProcedural(
-			instanceMesh, 0, material, new Bounds(Vector3.zero, Vector3.one),
-			hashes.Length, propertyBlock
-		);
-	}
+    void Update()
+    {
+        Graphics.DrawMeshInstancedProcedural(
+            instanceMesh,
+            0,
+            material,
+            new Bounds(Vector3.zero, Vector3.one), // bounding volume???
+            hashes.Length,
+            propertyBlock
+        );
+    }
 }

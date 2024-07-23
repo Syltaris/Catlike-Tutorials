@@ -51,6 +51,6 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "Catlike Tutorials.sln",
+    "dotnet.defaultSolution": "Catlike-Tutorials.sln",
     "dotnet.codeLens.enableReferencesCodeLens": false
 }
