@@ -5,15 +5,18 @@ using UnityEngine;
 
 public class PaddleGame : MonoBehaviour
 {
-    [SerializeField, Min(2)]
-    int pointsToWin = 3;
-
     [SerializeField]
     Ball ball;
 
     [SerializeField]
     Paddle bottomPaddle,
         topPaddle;
+
+    [SerializeField]
+    LivelyCamera livelyCamera;
+
+    [SerializeField, Min(2)]
+    int pointsToWin = 3;
 
     [SerializeField, Min(0f)]
     Vector2 arenaExtents = new Vector2(10f, 10f);
@@ -124,15 +127,22 @@ public class PaddleGame : MonoBehaviour
 
         BounceXIfNeeded(bounceX);
         bounceX = ball.Position.x - ball.Velocity.x * durationAfterBounce;
+        livelyCamera.PushXZ(ball.Velocity);
+
         ball.BounceY(boundary);
 
         if (defender.HitBall(bounceX, ball.Extents, out float hitFactor)) // whoa output param as part of function input params
         {
             ball.SetXPositionAndSpeed(bounceX, hitFactor, durationAfterBounce);
         }
-        else if (attacker.ScorePoint(pointsToWin))
+        else
         {
-            EndGame();
+            livelyCamera.JostleY();
+
+            if (attacker.ScorePoint(pointsToWin))
+            {
+                EndGame();
+            }
         }
     }
 
@@ -149,10 +159,12 @@ public class PaddleGame : MonoBehaviour
         float xExtents = arenaExtents.x - ball.Extents;
         if (x < -xExtents)
         {
+            livelyCamera.PushXZ(ball.Velocity);
             ball.BounceX(-xExtents);
         }
         else if (x > xExtents)
         {
+            livelyCamera.PushXZ(ball.Velocity);
             ball.BounceX(xExtents);
         }
     }
