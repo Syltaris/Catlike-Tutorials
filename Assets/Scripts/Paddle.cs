@@ -22,10 +22,16 @@ public class Paddle : MonoBehaviour
     float extents,
         targetingBias;
 
+    static readonly int timeOfLastHitId = Shader.PropertyToID("_TimeOfLastHit");
+
+    Material paddleMaterial;
+
     void ChangeTargetingBias() => targetingBias = Random.Range(-maxTargetingBias, maxTargetingBias);
 
     void Awake()
     {
+        paddleMaterial = GetComponent<MeshRenderer>().material;
+
         SetScore(0);
     }
 
@@ -97,6 +103,12 @@ public class Paddle : MonoBehaviour
         ChangeTargetingBias();
 
         hitFactor = (ballX - transform.localPosition.x) / (extents + ballExtents); // is ball within paddle's pos + width | also useful as ratio of where it was hit on paddle
-        return -1f <= hitFactor && hitFactor <= 1f;
+
+        bool success = -1f <= hitFactor && hitFactor <= 1f;
+        if (success)
+        {
+            paddleMaterial.SetFloat(timeOfLastHitId, Time.time);
+        }
+        return success;
     }
 }
