@@ -340,7 +340,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &162906100
 Transform:
   m_ObjectHideFlags: 0
@@ -371,6 +371,8 @@ MonoBehaviour:
   instanceMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   material: {fileID: 2100000, guid: 48e84fdc99eb4b043b03a5fe579d961a, type: 2}
   resolution: 16
+  seed: 0
+  verticalOffset: 1
 --- !u!1 &166985384
 GameObject:
   m_ObjectHideFlags: 0
